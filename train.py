@@ -17,7 +17,7 @@ from torch import dtype
 from data import Data
 from config import Config
 import tiktoken
-from model import GPT
+from model import GPT, CausalSelfAttention
 import numpy as np
 
 
@@ -28,7 +28,8 @@ vocab_size = enc.n_vocab
 batch_size = 4
 max_steps = 200
 block_size = 4
-conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_size, max_steps=max_steps)
+n_embd = 384
+conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_size, max_steps=max_steps, n_embd=n_embd)
 
 data_obj = Data(text, conf)
 x, y = data_obj.get_batch("train")
@@ -68,12 +69,19 @@ encoded = enc.encode(prompt)
 prompt_tensor = torch.tensor(encoded, dtype=torch.long)
 prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
 
-token_ids = model.generate(prompt_tensor, 4)[0]
-decoded_str = enc.decode(token_ids.tolist())
+# token_ids = model.generate(prompt_tensor, 4)[0]
+# decoded_str = enc.decode(token_ids.tolist())
+# print(f"Decoded str: {decoded_str}")
 
+# logits, loss = model.forward(x, y)
 
-logits, loss = model.forward(x, y)
-
-print(f"Average loss: {np.mean([losses])}")
+print(f"Average loss: {np.mean(losses)}")
 print(f"Final loss: {loss}")
-print(f"Decoded str: {decoded_str}")
+
+
+fake_x = torch.randn(batch_size, block_size, n_embd)
+attention = CausalSelfAttention(conf)
+output = attention.forward(fake_x)
+print(f"Shape of input: {fake_x.shape}")
+print(f"Shape of output: {output.shape}")
+

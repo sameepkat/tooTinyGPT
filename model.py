@@ -29,7 +29,6 @@ class GPT(nn.Module):
         self.block_size = config.block_size
         n_embd = config.n_embd
 
-
         self.token_embedding_table = nn.Embedding(vocab_size, embedding_dimension)
         self.position_embedding_table = nn.Embedding(self.block_size, embedding_dimension)
         self.lm_head = nn.Linear(in_features=n_embd, out_features=vocab_size)
@@ -95,12 +94,50 @@ class Block(nn.Module):
         pass
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, x: torch.Tensor):  # x.shape = (B, T, C)
-        pass
+    def __init__(self,  config: Config):  # x.shape = (B, T, C)
+        super().__init__()
 
-    def forward(self):
-        # return shape (B, T, C)
-        pass
+        self.n_embd = config.n_embd
+        self.n_head = config.n_head
+
+        self.head_size = self.n_embd // self.n_head
+        self.W_q = nn.Linear(in_features=self.n_embd, out_features=self.n_embd, bias=False)
+        self.W_k = nn.Linear(in_features=self.n_embd, out_features=self.n_embd, bias=False)
+        self.W_v = nn.Linear(in_features=self.n_embd, out_features=self.n_embd, bias=False)
+        self.W_o = nn.Linear(in_features=self.n_embd, out_features=self.n_embd, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T, C = x.shape
+        n_head = self.n_head
+        head_size = C // n_head
+
+        q = self.W_q(x) # (batch_size, seq_len, d_model)
+        k = self.W_k(x)
+        v = self.W_v(x)
+
+        Q = q.reshape(B, -1, n_head, head_size) # Split d_model into n_head * head_size = C -> n_head * head_size
+        K = k.reshape(B, -1, n_head, head_size)
+        V = v.reshape(B, -1, n_head, head_size)
+
+        Q = Q.permute(0, 2, 1, 3) # bring n_head to front: (batch_size, n_head, seq_len , head_size)
+        K = K.permute(0, 2, 1, 3) # turns out permute is similar to transpose that allows multiple_dimensions like we are doing here
+        V = V.permute(0, 2, 1, 3)
+
+        K_T = K.permute(0, 1, 3, 2)# from the dot attention formula: We need QK^T: Swapping last two dimensions
+
+        scores = Q @ K_T
+        mask = torch.tril(torch.ones_like(scores))
+        masked_scores = scores.masked_fill(mask == 0, float("-inf"))
+        
+
+        scaled = masked_scores / (self.head_size ** 0.5)
+        attention = nn.functional.softmax(scaled, dim=-1) @ V # attention = (QK^T)/sqrt(d_k) * V # softmax over last dimension
+
+        output = attention.permute(0, 2, 1, 3) # transpose back to (batch_size, seq_len, n_head, head_size)
+        reshaped_output = output.reshape(B, T, C) # now i guess head should be (batch_size, seq_len, )
+        final = self.W_o(reshaped_output) # mix information acorss heads
+        
+        return final
     
 
 class MultiHeadAttention(nn.Module):

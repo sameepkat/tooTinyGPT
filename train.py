@@ -18,35 +18,62 @@ from data import Data
 from config import Config
 import tiktoken
 from model import GPT
+import numpy as np
 
 
-text = "Hello World. Is this a text?"
+text = "The quick brown fox jumps over the lazy dog."
 enc = tiktoken.get_encoding("gpt2")
+
 vocab_size = enc.n_vocab
-conf = Config(vocab_size=vocab_size, block_size=4)
+batch_size = 4
+max_steps = 200
+block_size = 4
+conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_size, max_steps=max_steps)
 
 data_obj = Data(text, conf)
-
 x, y = data_obj.get_batch("train")
 
 print(f"x.shape: {x.shape}")
 print(f"y.shape: {y.shape}")
-print(f"Encoded x: {x[0]}")
-print(f"Encoded y: {y[0]}")
+print(f"Encoded x: {x}")
+print(f"Encoded y: {y}")
 
-decoded_text = enc.decode(x[0].tolist())
-decoded_y = enc.decode(y[0].tolist())
+# decoded_text = enc.decode(x[0].tolist())
+decoded_text  = [enc.decode(xi) for xi in x.tolist()]
+decoded_y = [enc.decode(yi) for yi in y.tolist()]
 
 print(f"Decoded x: {decoded_text}")
 print(f"Decoded y: {decoded_y}")
 
-prompt = "Hello"
-encoded_prompt = enc.encode(prompt)
-prompt_tensor = torch.tensor(encoded_prompt, dtype=torch.long)
-prompt_tensor = prompt_tensor.view(1, 1)
-
 model = GPT(conf)
+logits, loss = model.forward(x, y)
+
+print(f"Inital loss: {loss}")
+
+optimizer = torch.optim.AdamW(params=model.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
+
+losses = []
+
+for each_loop in range(conf.max_steps):
+    x, y = data_obj.get_batch("train")
+    logits, loss = model.forward(x, y)
+    assert loss is not None
+    losses.append(loss.item())
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+prompt = "brown"
+encoded = enc.encode(prompt)
+prompt_tensor = torch.tensor(encoded, dtype=torch.long)
+prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
+
 token_ids = model.generate(prompt_tensor, 4)[0]
 decoded_str = enc.decode(token_ids.tolist())
-print(f"Token Ids: {token_ids}")
+
+
+logits, loss = model.forward(x, y)
+
+print(f"Average loss: {np.mean([losses])}")
+print(f"Final loss: {loss}")
 print(f"Decoded str: {decoded_str}")

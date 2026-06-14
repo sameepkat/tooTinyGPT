@@ -95,11 +95,13 @@ class Block(nn.Module):
         pass
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self):
+    def __init__(self, x: torch.Tensor):  # x.shape = (B, T, C)
         pass
 
     def forward(self):
+        # return shape (B, T, C)
         pass
+    
 
 class MultiHeadAttention(nn.Module):
     def __init__(self):

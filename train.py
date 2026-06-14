@@ -12,9 +12,12 @@ Then, repepatedly
 - get batch -> run model -> compute loss -> backpropagate -> update weights -> occasionally evaluate -> ocasionally save checkpoint
 """
 
+import torch
+from torch import dtype
 from data import Data
 from config import Config
 import tiktoken
+from model import GPT
 
 
 text = "Hello World. Is this a text?"
@@ -36,3 +39,14 @@ decoded_y = enc.decode(y[0].tolist())
 
 print(f"Decoded x: {decoded_text}")
 print(f"Decoded y: {decoded_y}")
+
+prompt = "Hello"
+encoded_prompt = enc.encode(prompt)
+prompt_tensor = torch.tensor(encoded_prompt, dtype=torch.long)
+prompt_tensor = prompt_tensor.view(1, 1)
+
+model = GPT(conf)
+token_ids = model.generate(prompt_tensor, 4)[0]
+decoded_str = enc.decode(token_ids.tolist())
+print(f"Token Ids: {token_ids}")
+print(f"Decoded str: {decoded_str}")

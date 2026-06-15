@@ -32,6 +32,7 @@ class GPT(nn.Module):
         self.token_embedding_table = nn.Embedding(vocab_size, embedding_dimension)
         self.position_embedding_table = nn.Embedding(self.block_size, embedding_dimension)
         self.lm_head = nn.Linear(in_features=n_embd, out_features=vocab_size)
+        self.attention = CausalSelfAttention(config)
 
 
     def forward(self, x: torch.Tensor, y: Optional[torch.Tensor]  = None): # x.shape = (B, T), y(B, T) = Correct next tokens
@@ -45,6 +46,7 @@ class GPT(nn.Module):
         pos_emb_x = self.position_embedding_table(pos_ids) # (T, C)
 
         x_emb = tok_emb_x+ pos_emb_x  # (B, T, C) + (T, C) = (B, T, C)
+        x_emb = self.attention(x_emb)
         # TODO: Support GPU
         logits = self.lm_head(x_emb) # (B, T, vocab_size)
 
@@ -127,6 +129,7 @@ class CausalSelfAttention(nn.Module):
 
         scores = Q @ K_T
         mask = torch.tril(torch.ones_like(scores))
+        # TODO: Juse use TxT shape 
         masked_scores = scores.masked_fill(mask == 0, float("-inf"))
         
 
@@ -148,8 +151,21 @@ class MultiHeadAttention(nn.Module):
         pass
 
 class FeedForward(nn.Module):
-    def __init__(self):
-        pass
+    def __init__(self, config: Config):
+        super().__init__()
+        in_features = config.n_embd 
+        hidden_size = 4 * config.n_embd  # to allow larger hidden layer more capacity to transform each token vector
 
-    def forward(self):
-        pass
+        self.ff_exapnd_layer = nn.Linear(in_features=in_features, out_features=hidden_size)
+        self.gelu = nn.GELU()
+        
+        out_features = config.n_embd
+
+        self.out_layer = nn.Linear(in_features=hidden_size, out_features=out_features)
+
+    def forward(self, x: torch.Tensor): # x: (B, T, C)
+        x = self.ff_exapnd_layer(x)
+        x = self.gelu(x)
+        x = self.out_layer(x)
+        return x
+        # return (B, T, C)

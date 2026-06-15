@@ -13,11 +13,10 @@ Then, repepatedly
 """
 
 import torch
-from torch import dtype
 from data import Data
 from config import Config
 import tiktoken
-from model import GPT, CausalSelfAttention
+from model import GPT, FeedForward
 import numpy as np
 
 
@@ -49,7 +48,7 @@ print(f"Decoded y: {decoded_y}")
 model = GPT(conf)
 logits, loss = model.forward(x, y)
 
-print(f"Inital loss: {loss}")
+print(f"Initial loss: {loss}")
 
 optimizer = torch.optim.AdamW(params=model.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
 
@@ -69,19 +68,19 @@ encoded = enc.encode(prompt)
 prompt_tensor = torch.tensor(encoded, dtype=torch.long)
 prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
 
-# token_ids = model.generate(prompt_tensor, 4)[0]
-# decoded_str = enc.decode(token_ids.tolist())
-# print(f"Decoded str: {decoded_str}")
 
-# logits, loss = model.forward(x, y)
+token_ids = model.generate(prompt_tensor, 4)[0]
+decoded_str = enc.decode(token_ids.tolist())
+print(f"Decoded str: {decoded_str}")
+
+logits, loss = model.forward(x, y)
 
 print(f"Average loss: {np.mean(losses)}")
 print(f"Final loss: {loss}")
 
+fake_x = torch.randn(size=(batch_size, block_size, n_embd))
+ff = FeedForward(conf)
+output = ff(fake_x)
 
-fake_x = torch.randn(batch_size, block_size, n_embd)
-attention = CausalSelfAttention(conf)
-output = attention.forward(fake_x)
-print(f"Shape of input: {fake_x.shape}")
-print(f"Shape of output: {output.shape}")
-
+print("Output: ",output)
+print("Output shape: ", output.shape)

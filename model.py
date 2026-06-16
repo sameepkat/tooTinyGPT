@@ -68,11 +68,14 @@ class GPT(nn.Module):
         
         return logits, loss
 
-    def generate(self, token_ids: torch.Tensor, max_new_tokens: int): # - token IDs generated so far - shape = (B, T)
+    def generate(self, token_ids: torch.Tensor, max_new_tokens: int, temperature=0.8, top_k=None): # - token IDs generated so far - shape = (B, T)
         """
         Used for generation/ sampling
         """
         i = max_new_tokens
+
+        if temperature <= 0:
+            raise ValueError(f"Invalid temperature: {temperature}")
         while i> 0:
             B, T = token_ids.shape
             ctx = token_ids
@@ -81,11 +84,18 @@ class GPT(nn.Module):
 
             logits, _ = self.forward(ctx)
             latest = logits[:, -1, :] # (B, vocab_size)
+            latest = latest / temperature
+            if top_k is not None and top_k <=0:
+                raise ValueError(f"top_k can't be 0 or negative: {top_k}")
+            if top_k is not None:
+                top_k = min(top_k, latest.shape[-1]) # clamping 
+                values, indices = torch.topk(latest, k=top_k , dim=-1)
+                threshold = values[:, [-1]]
+                latest = torch.masked_fill(latest, latest < threshold, float("-inf"))
+
 
             probabilities = nn.functional.softmax(latest, -1) # softmax over vocab dimension to get probabilities over vocabulary
-            prediction = torch.argmax(input=probabilities, dim=-1) # greedy first for now # has shape Of (B,)
-            prediction = prediction.reshape(-1, 1) # (B) -> (B, 1) for cat
-            # TODO: Use sampling instead of greedy approach
+            prediction = torch.multinomial(probabilities, num_samples=1)
 
             token_ids = torch.cat([token_ids, prediction], dim=1) # stack along T dimension
             i -= 1

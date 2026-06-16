@@ -19,7 +19,6 @@ import tiktoken
 from model import GPT, FeedForward, Block
 import numpy as np
 
-
 text = "The quick brown fox jumps over the lazy dog."
 enc = tiktoken.get_encoding("gpt2")
 
@@ -28,7 +27,10 @@ batch_size = 4
 max_steps = 200
 block_size = 4
 n_embd = 384
-conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_size, max_steps=max_steps, n_embd=n_embd)
+max_new_tokens = 60
+temperature = 0.8
+top_k = 50
+conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_size, max_steps=max_steps, n_embd=n_embd, )
 
 data_obj = Data(text, conf)
 x, y = data_obj.get_batch("train")
@@ -48,7 +50,10 @@ decoded_y = [enc.decode(yi) for yi in y.tolist()]
 model = GPT(conf)
 logits, loss = model.forward(x, y)
 
+total_params = sum([p.numel() for p in model.parameters()])
+
 print(f"Initial loss: {loss}")
+print(f"Total parameters: {total_params:,}")
 
 optimizer = torch.optim.AdamW(params=model.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
 
@@ -63,13 +68,13 @@ for each_loop in range(conf.max_steps):
     loss.backward()
     optimizer.step()
 
-prompt = " brown"
+prompt = "The quick"
 encoded = enc.encode(prompt)
 prompt_tensor = torch.tensor(encoded, dtype=torch.long)
 prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
 
 
-token_ids = model.generate(prompt_tensor, 4)[0]
+token_ids = model.generate(prompt_tensor, max_new_tokens, temperature=temperature, top_k=top_k)[0]
 decoded_str = enc.decode(token_ids.tolist())
 print(f"Original str: {text}")
 print(f"Given str: {prompt}")

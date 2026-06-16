@@ -16,7 +16,7 @@ import torch
 from data import Data
 from config import Config
 import tiktoken
-from model import GPT, FeedForward
+from model import GPT, FeedForward, Block
 import numpy as np
 
 
@@ -33,17 +33,17 @@ conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_siz
 data_obj = Data(text, conf)
 x, y = data_obj.get_batch("train")
 
-print(f"x.shape: {x.shape}")
-print(f"y.shape: {y.shape}")
-print(f"Encoded x: {x}")
-print(f"Encoded y: {y}")
+#print(f"x.shape: {x.shape}")
+#print(f"y.shape: {y.shape}")
+#print(f"Encoded x: {x}")
+#print(f"Encoded y: {y}")
 
 # decoded_text = enc.decode(x[0].tolist())
 decoded_text  = [enc.decode(xi) for xi in x.tolist()]
 decoded_y = [enc.decode(yi) for yi in y.tolist()]
 
-print(f"Decoded x: {decoded_text}")
-print(f"Decoded y: {decoded_y}")
+#print(f"Decoded x: {decoded_text}")
+#print(f"Decoded y: {decoded_y}")
 
 model = GPT(conf)
 logits, loss = model.forward(x, y)
@@ -63,7 +63,7 @@ for each_loop in range(conf.max_steps):
     loss.backward()
     optimizer.step()
 
-prompt = "brown"
+prompt = " brown"
 encoded = enc.encode(prompt)
 prompt_tensor = torch.tensor(encoded, dtype=torch.long)
 prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
@@ -78,9 +78,3 @@ logits, loss = model.forward(x, y)
 print(f"Average loss: {np.mean(losses)}")
 print(f"Final loss: {loss}")
 
-fake_x = torch.randn(size=(batch_size, block_size, n_embd))
-ff = FeedForward(conf)
-output = ff(fake_x)
-
-print("Output: ",output)
-print("Output shape: ", output.shape)

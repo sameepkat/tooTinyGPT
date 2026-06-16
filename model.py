@@ -32,7 +32,7 @@ class GPT(nn.Module):
         self.token_embedding_table = nn.Embedding(vocab_size, embedding_dimension)
         self.position_embedding_table = nn.Embedding(self.block_size, embedding_dimension)
         self.lm_head = nn.Linear(in_features=n_embd, out_features=vocab_size)
-        self.attention = CausalSelfAttention(config)
+        self.block = Block(config)
 
 
     def forward(self, x: torch.Tensor, y: Optional[torch.Tensor]  = None): # x.shape = (B, T), y(B, T) = Correct next tokens
@@ -45,8 +45,8 @@ class GPT(nn.Module):
         pos_ids = torch.arange(T) # ( T, )
         pos_emb_x = self.position_embedding_table(pos_ids) # (T, C)
 
-        x_emb = tok_emb_x+ pos_emb_x  # (B, T, C) + (T, C) = (B, T, C)
-        x_emb = self.attention(x_emb)
+        x_emb = tok_emb_x + pos_emb_x  # (B, T, C) + (T, C) = (B, T, C)
+        x_emb = self.block(x_emb)
         # TODO: Support GPU
         logits = self.lm_head(x_emb) # (B, T, vocab_size)
 
@@ -89,12 +89,19 @@ class GPT(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self):
-        pass
+    def __init__(self, config: Config):
+        super().__init__()
+        # TODO: Implement my own LayerNorm
+        self.first_layernorm = nn.LayerNorm(config.n_embd, bias=False) # normalize for attention
+        self.attention = CausalSelfAttention(config)
+        self.second_layernorm = nn.LayerNorm(config.n_embd, bias=False) # attention block changes the representation, so 
+        self.feedforward = FeedForward(config)
 
-    def forward(self):
-        pass
-
+    def forward(self, x: torch.Tensor):
+        x = x + self.attention(self.first_layernorm(x))
+        x = x + self.feedforward(self.second_layernorm(x))
+        return x
+    
 class CausalSelfAttention(nn.Module):
     def __init__(self,  config: Config):  # x.shape = (B, T, C)
         super().__init__()
@@ -141,14 +148,6 @@ class CausalSelfAttention(nn.Module):
         final = self.W_o(reshaped_output) # mix information acorss heads
         
         return final
-    
-
-class MultiHeadAttention(nn.Module):
-    def __init__(self):
-        pass
-
-    def forward(self):
-        pass
 
 class FeedForward(nn.Module):
     def __init__(self, config: Config):
@@ -156,7 +155,7 @@ class FeedForward(nn.Module):
         in_features = config.n_embd 
         hidden_size = 4 * config.n_embd  # to allow larger hidden layer more capacity to transform each token vector
 
-        self.ff_exapnd_layer = nn.Linear(in_features=in_features, out_features=hidden_size)
+        self.ff_expand_layer = nn.Linear(in_features=in_features, out_features=hidden_size)
         self.gelu = nn.GELU()
         
         out_features = config.n_embd
@@ -164,8 +163,9 @@ class FeedForward(nn.Module):
         self.out_layer = nn.Linear(in_features=hidden_size, out_features=out_features)
 
     def forward(self, x: torch.Tensor): # x: (B, T, C)
-        x = self.ff_exapnd_layer(x)
+        x = self.ff_expand_layer(x)
         x = self.gelu(x)
         x = self.out_layer(x)
+        # Implement Dropout
         return x
         # return (B, T, C)

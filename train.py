@@ -71,9 +71,11 @@ prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
 
 token_ids = model.generate(prompt_tensor, 4)[0]
 decoded_str = enc.decode(token_ids.tolist())
+print(f"Original str: {text}")
+print(f"Given str: {prompt}")
 print(f"Decoded str: {decoded_str}")
 
-logits, loss = model.forward(x, y)
+logits, loss = model(x, y)
 
 print(f"Average loss: {np.mean(losses)}")
 print(f"Final loss: {loss}")

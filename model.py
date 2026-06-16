@@ -27,12 +27,14 @@ class GPT(nn.Module):
         vocab_size = config.vocab_size
         embedding_dimension = config.n_embd
         self.block_size = config.block_size
+        n_layer = config.n_layer
         n_embd = config.n_embd
 
         self.token_embedding_table = nn.Embedding(vocab_size, embedding_dimension)
         self.position_embedding_table = nn.Embedding(self.block_size, embedding_dimension)
         self.lm_head = nn.Linear(in_features=n_embd, out_features=vocab_size)
-        self.block = Block(config)
+        self.blocks =  nn.ModuleList(Block(config) for _ in range(n_layer))
+        self.layer_norm = nn.LayerNorm(n_embd, bias=False)
 
 
     def forward(self, x: torch.Tensor, y: Optional[torch.Tensor]  = None): # x.shape = (B, T), y(B, T) = Correct next tokens
@@ -46,7 +48,10 @@ class GPT(nn.Module):
         pos_emb_x = self.position_embedding_table(pos_ids) # (T, C)
 
         x_emb = tok_emb_x + pos_emb_x  # (B, T, C) + (T, C) = (B, T, C)
-        x_emb = self.block(x_emb)
+        for block in self.blocks:
+            x_emb = block(x_emb)
+
+        x_emb = self.layer_norm(x_emb)
         # TODO: Support GPU
         logits = self.lm_head(x_emb) # (B, T, vocab_size)
 

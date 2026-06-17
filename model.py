@@ -27,6 +27,7 @@ class GPT(nn.Module):
         vocab_size = config.vocab_size
         embedding_dimension = config.n_embd
         self.block_size = config.block_size
+        self.device = config.device
         n_layer = config.n_layer
         n_embd = config.n_embd
 
@@ -44,7 +45,7 @@ class GPT(nn.Module):
         B, T, = x.shape
         tok_emb_x = self.token_embedding_table(x) # (B, T, C)
 
-        pos_ids = torch.arange(T) # ( T, )
+        pos_ids = torch.arange(T).to(x.device) # ( T, )
         pos_emb_x = self.position_embedding_table(pos_ids) # (T, C)
 
         x_emb = tok_emb_x + pos_emb_x  # (B, T, C) + (T, C) = (B, T, C)
@@ -130,6 +131,9 @@ class CausalSelfAttention(nn.Module):
         self.W_v = nn.Linear(in_features=self.n_embd, out_features=self.n_embd, bias=False)
         self.W_o = nn.Linear(in_features=self.n_embd, out_features=self.n_embd, bias=False)
 
+        self.attention_dropout = nn.Dropout(config.dropout)
+        self.residual_dropout = nn.Dropout(config.dropout)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, C = x.shape
         n_head = self.n_head
@@ -156,11 +160,13 @@ class CausalSelfAttention(nn.Module):
         
 
         scaled = masked_scores / (self.head_size ** 0.5)
-        attention = nn.functional.softmax(scaled, dim=-1) @ V # attention = (QK^T)/sqrt(d_k) * V # softmax over last dimension
+        attention = nn.functional.softmax(scaled, dim=-1) # attention = (QK^T)/sqrt(d_k) * V # softmax over last dimension
+        attention = self.attention_dropout(attention) @ V
 
         output = attention.permute(0, 2, 1, 3) # transpose back to (batch_size, seq_len, n_head, head_size)
         reshaped_output = output.reshape(B, T, C) # now i guess head should be (batch_size, seq_len, )
         final = self.W_o(reshaped_output) # mix information acorss heads
+        final = self.residual_dropout(final)
         
         return final
 
@@ -176,11 +182,13 @@ class FeedForward(nn.Module):
         out_features = config.n_embd
 
         self.out_layer = nn.Linear(in_features=hidden_size, out_features=out_features)
+        self.feedforward_dropout = nn.Dropout(config.dropout)
 
     def forward(self, x: torch.Tensor): # x: (B, T, C)
         x = self.ff_expand_layer(x)
         x = self.gelu(x)
         x = self.out_layer(x)
-        # Implement Dropout
+        x = self.feedforward_dropout(x)
+
         return x
         # return (B, T, C)

@@ -1,3 +1,6 @@
+import torch
+
+
 class Config:
     def __init__(
         self,
@@ -15,6 +18,7 @@ class Config:
         eval_steps=20,
         grad_clip=1.0,
         train_split=0.9,
+        checkpoint_interval=500,
         weight_decay=0,
         seed=123,
     ):
@@ -29,10 +33,11 @@ class Config:
         self.batch_size = batch_size
         self.lr = lr
         self.max_steps = max_steps
-        self.device = device
+        self.device = torch.device(device)
         self.eval_interval = eval_interval
         self.eval_steps = eval_steps
         self.grad_clip = grad_clip
         self.train_split = train_split
+        self.checkpoint_interval = checkpoint_interval
         self.weight_decay = weight_decay
         self.seed = seed

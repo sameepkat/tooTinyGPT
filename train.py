@@ -16,72 +16,88 @@ import torch
 from data import Data
 from config import Config
 import tiktoken
-from model import GPT, FeedForward, Block
+from model import GPT
 import numpy as np
+import os
 
-text = "The quick brown fox jumps over the lazy dog."
+# Setup 
 enc = tiktoken.get_encoding("gpt2")
 
 vocab_size = enc.n_vocab
 batch_size = 4
-max_steps = 200
-block_size = 4
+max_steps = 1000
+block_size = 64
 n_embd = 384
-max_new_tokens = 60
+max_new_tokens = 256
 temperature = 0.8
 top_k = 50
-conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_size, max_steps=max_steps, n_embd=n_embd, )
+dropout = 0.1
+device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+conf = Config(batch_size=batch_size, vocab_size=vocab_size, block_size=block_size, max_steps=max_steps, n_embd=n_embd, dropout=dropout, device=device)
 
+input_file = os.path.join(os.path.dirname(__file__), 'data' ,  'shakespeare.txt')
+with open(input_file, 'r', encoding='utf-8') as f:
+    text = f.read()
+    
+print(f"Using device: {device}")
+
+# Data
 data_obj = Data(text, conf)
 x, y = data_obj.get_batch("train")
 
-#print(f"x.shape: {x.shape}")
-#print(f"y.shape: {y.shape}")
-#print(f"Encoded x: {x}")
-#print(f"Encoded y: {y}")
-
-# decoded_text = enc.decode(x[0].tolist())
-decoded_text  = [enc.decode(xi) for xi in x.tolist()]
-decoded_y = [enc.decode(yi) for yi in y.tolist()]
-
-#print(f"Decoded x: {decoded_text}")
-#print(f"Decoded y: {decoded_y}")
-
-model = GPT(conf)
-logits, loss = model.forward(x, y)
+# Model
+model = GPT(conf).to(device)
+logits, loss = model(x, y)
 
 total_params = sum([p.numel() for p in model.parameters()])
 
+
+# Loss
 print(f"Initial loss: {loss}")
 print(f"Total parameters: {total_params:,}")
 
 optimizer = torch.optim.AdamW(params=model.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
 
-losses = []
+train_losses = []
 
+# Training loop
 for each_loop in range(conf.max_steps):
     x, y = data_obj.get_batch("train")
-    logits, loss = model.forward(x, y)
+    logits, loss = model(x, y)
     assert loss is not None
-    losses.append(loss.item())
+    train_losses.append(loss.item())
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+    if each_loop % 10 == 0:
+        print(f"Loop: {each_loop}\tLoss: {loss.item()}")
 
-prompt = "The quick"
+prompt = "To be"
 encoded = enc.encode(prompt)
 prompt_tensor = torch.tensor(encoded, dtype=torch.long)
 prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
+prompt_tensor = prompt_tensor.to(device)
 
+model.eval()
+# Loss Evaluation
+eval_losses = []
 
-token_ids = model.generate(prompt_tensor, max_new_tokens, temperature=temperature, top_k=top_k)[0]
-decoded_str = enc.decode(token_ids.tolist())
-print(f"Original str: {text}")
-print(f"Given str: {prompt}")
+with torch.no_grad():
+    for _ in range(20):
+        x, y = data_obj.get_batch("train")
+        logits, loss = model(x, y)
+        eval_losses.append(loss.item())
+    
+
+# Generation
+with torch.no_grad():
+    token_ids = model.generate(prompt_tensor, max_new_tokens, temperature=temperature, top_k=top_k)[0]
+decoded_str = enc.decode(token_ids.cpu().tolist())
+print(f"Original str: {text[:200]}")
+print(f"Prompt str: {prompt}")
 print(f"Decoded str: {decoded_str}")
 
-logits, loss = model(x, y)
+print(f"Average training loss: {np.mean(train_losses)}")
 
-print(f"Average loss: {np.mean(losses)}")
-print(f"Final loss: {loss}")
-
+estimated_loss = np.mean(eval_losses)
+print(f"Estimated loss: {estimated_loss}")

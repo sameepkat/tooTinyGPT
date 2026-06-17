@@ -21,6 +21,7 @@ class Config:
         checkpoint_interval=500,
         weight_decay=0,
         seed=123,
+        resume=False
     ):
         if n_embd % n_head != 0:
             raise ValueError("incorrect value for n_embd or n_head")
@@ -40,4 +41,5 @@ class Config:
         self.train_split = train_split
         self.checkpoint_interval = checkpoint_interval
         self.weight_decay = weight_decay
+        self.resume = resume
         self.seed = seed

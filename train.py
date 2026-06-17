@@ -19,6 +19,7 @@ import tiktoken
 from model import GPT
 import numpy as np
 import os
+import checkpoint
 
 # Setup 
 enc = tiktoken.get_encoding("gpt2")
@@ -47,21 +48,22 @@ x, y = data_obj.get_batch("train")
 
 # Model
 model = GPT(conf).to(device)
-logits, loss = model(x, y)
+optimizer = torch.optim.AdamW(params=model.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
+start_step = 0
 
+if conf.resume:
+    start_step = checkpoint.load_checkpoint(model, optimizer, conf)
+
+logits, loss = model(x, y) 
 total_params = sum([p.numel() for p in model.parameters()])
-
-
 # Loss
+train_losses = []
 print(f"Initial loss: {loss}")
 print(f"Total parameters: {total_params:,}")
 
-optimizer = torch.optim.AdamW(params=model.parameters(), lr=conf.lr, weight_decay=conf.weight_decay)
-
-train_losses = []
-
+last_step = 0
 # Training loop
-for each_loop in range(conf.max_steps):
+for each_loop in range(start_step, conf.max_steps):
     x, y = data_obj.get_batch("train")
     logits, loss = model(x, y)
     assert loss is not None
@@ -71,6 +73,9 @@ for each_loop in range(conf.max_steps):
     optimizer.step()
     if each_loop % 10 == 0:
         print(f"Loop: {each_loop}\tLoss: {loss.item()}")
+    if each_loop > 0 and each_loop % conf.checkpoint_interval == 0:
+        checkpoint.save_checkpoint(model, optimizer, conf, each_loop)
+    last_step = each_loop
 
 prompt = "To be"
 encoded = enc.encode(prompt)
@@ -97,7 +102,11 @@ print(f"Original str: {text[:200]}")
 print(f"Prompt str: {prompt}")
 print(f"Decoded str: {decoded_str}")
 
-print(f"Average training loss: {np.mean(train_losses)}")
+if len(train_losses) == 0:
+    print("No training steps run")
+else:
+    print(f"Average training loss: {np.mean(train_losses)}")
+    checkpoint.save_checkpoint(model, optimizer, conf, last_step)
 
 estimated_loss = np.mean(eval_losses)
 print(f"Estimated loss: {estimated_loss}")

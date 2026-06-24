@@ -31,3 +31,26 @@ def load_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, co
     optimizer.load_state_dict(optimizer_state)
     model.to(config.device)
     return checkpoint["step"] + 1
+
+def load_model_checkpoint(model, config: Config):
+    checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoint.pt")
+
+    if not os.path.exists(checkpoint_path):
+        raise ValueError("checkpoint file not found")
+
+    checkpoint = torch.load(checkpoint_path, map_location=config.device)
+
+    model_state = checkpoint['model_state_dict']
+    model.load_state_dict(model_state)
+    model.to(config.device)
+    return checkpoint
+
+def load_checkpoint_file(device: str | torch.device):
+    checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoint.pt")
+
+    if not os.path.exists(checkpoint_path):
+        raise ValueError("checkpoint file not found")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    return checkpoint

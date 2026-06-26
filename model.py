@@ -1,21 +1,3 @@
-# convert x of size (Batch_size, Sequence_length) to logits whose shape is (Batch_size, Sequence_length, Vocab_size)
-# each position gets score for all tokens in vocab_size
-
-"""
-Implement
-1. Token Embedding
-token ID -> vector
-
-2. Positional Embedding
-position number -> vector
-
-3. Transformer Blocks
-attention + feed-forward + layernorm
-
-4. Final linear head
-hidden vector -> vocabulary score
-"""
-
 import torch
 import torch.nn as nn
 from config import Config

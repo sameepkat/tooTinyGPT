@@ -1,17 +1,3 @@
-# orchestrate
-
-"""
-1. create Config from config.py
-2. choose tokenizer from data.py
-3. load raw text from sample file
-4. create Data object from data.py
-5. create model from model.py
-6. create optimizer (probably here from pytorch.py)
-
-Then, repepatedly
-- get batch -> run model -> compute loss -> backpropagate -> update weights -> occasionally evaluate -> ocasionally save checkpoint
-"""
-
 import math
 import os
 import sys

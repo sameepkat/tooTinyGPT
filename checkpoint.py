@@ -1,10 +1,3 @@
-# Save and load training state
-
-"""
-saves:
-model weights, optimizer state, current training step, config, maybe latest train/ val loss
-"""
-
 import os
 import torch
 from config import Config

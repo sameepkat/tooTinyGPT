@@ -12,9 +12,13 @@ class Config:
         dropout=0.1,
         batch_size=32,  # B - How many chunks
         lr=3e-4,
+        warmup_iters = 500,
+        decay_iters = 20000,
+        min_lr = 3e-5,
+        max_lr = 3e-4,
         max_steps=5000,
         device="cpu",
-        eval_interval=200,
+        eval_interval=500,
         eval_steps=20,
         grad_clip=1.0,
         train_split=0.9,
@@ -33,6 +37,10 @@ class Config:
         self.dropout = dropout
         self.batch_size = batch_size
         self.lr = lr
+        self.warmup_iters = warmup_iters
+        self.decay_iters = decay_iters
+        self.min_lr = min_lr
+        self.max_lr = max_lr
         self.max_steps = max_steps
         self.device = torch.device(device)
         self.eval_interval = eval_interval

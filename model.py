@@ -35,7 +35,6 @@ class GPT(nn.Module):
             x_emb = block(x_emb)
 
         x_emb = self.layer_norm(x_emb)
-        # TODO: Support GPU
         logits = self.lm_head(x_emb) # (B, T, vocab_size)
 
         B, T, vocab_size = logits.shape
@@ -104,6 +103,7 @@ class CausalSelfAttention(nn.Module):
     def __init__(self,  config: Config):  # x.shape = (B, T, C)
         super().__init__()
 
+        block_size = config.block_size
         self.n_embd = config.n_embd
         self.n_head = config.n_head
 
@@ -115,6 +115,8 @@ class CausalSelfAttention(nn.Module):
 
         self.attention_dropout = nn.Dropout(config.dropout)
         self.residual_dropout = nn.Dropout(config.dropout)
+        self.mask: torch.Tensor
+        self.register_buffer("mask", torch.tril(torch.ones(block_size, block_size, dtype=torch.bool))) # So, it can be moved to device
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, T, C = x.shape
@@ -136,13 +138,12 @@ class CausalSelfAttention(nn.Module):
         K_T = K.permute(0, 1, 3, 2)# from the dot attention formula: We need QK^T: Swapping last two dimensions
 
         scores = Q @ K_T
-        mask = torch.tril(torch.ones_like(scores))
-        # TODO: Juse use TxT shape 
-        masked_scores = scores.masked_fill(mask == 0, float("-inf"))
+        mask = self.mask[:T, :T]
         
 
-        scaled = masked_scores / (self.head_size ** 0.5)
-        attention = nn.functional.softmax(scaled, dim=-1) # attention = (QK^T)/sqrt(d_k) * V # softmax over last dimension
+        scaled = scores / (self.head_size ** 0.5)
+        masked_scores = scaled.masked_fill(~mask, float("-inf"))
+        attention = nn.functional.softmax(masked_scores, dim=-1) # attention = (QK^T)/sqrt(d_k) * V # softmax over last dimension
         attention = self.attention_dropout(attention) @ V
 
         output = attention.permute(0, 2, 1, 3) # transpose back to (batch_size, seq_len, n_head, head_size)

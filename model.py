@@ -18,6 +18,7 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(in_features=n_embd, out_features=vocab_size)
         self.blocks =  nn.ModuleList(Block(config) for _ in range(n_layer))
         self.layer_norm = nn.LayerNorm(n_embd, bias=False)
+        self.lm_head.weight = self.token_embedding_table.weight # Weight Tying. reduces parameter count
 
 
     def forward(self, x: torch.Tensor, y: Optional[torch.Tensor]  = None): # x.shape = (B, T), y(B, T) = Correct next tokens
@@ -25,6 +26,9 @@ class GPT(nn.Module):
         Used for training , evaluation & generation
         """
         B, T, = x.shape
+
+        assert T <= self.block_size, f"Cannot forward sequence length {T}, block_size is {self.block_size}"
+        
         tok_emb_x = self.token_embedding_table(x) # (B, T, C)
 
         pos_ids = torch.arange(T).to(x.device) # ( T, )

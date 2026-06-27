@@ -21,6 +21,7 @@ class Config:
         eval_interval=500,
         eval_steps=20,
         grad_clip=1.0,
+        gradient_accumulation_steps = 1,
         train_split=0.9,
         checkpoint_interval=500,
         weight_decay=0,
@@ -46,6 +47,7 @@ class Config:
         self.eval_interval = eval_interval
         self.eval_steps = eval_steps
         self.grad_clip = grad_clip
+        self.gradient_accumulation_steps = gradient_accumulation_steps
         self.train_split = train_split
         self.checkpoint_interval = checkpoint_interval
         self.weight_decay = weight_decay

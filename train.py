@@ -92,36 +92,47 @@ print(f"Total parameters: {total_params:,}")
 
 last_step = 0
 # Training loop
-for each_loop in range(start_step, conf.max_steps):
+optimizer.zero_grad()
+update_step = start_step
+N = conf.gradient_accumulation_steps
+
+for each_loop in range(start_step * N, conf.max_steps * N):
+
     for param_group in optimizer.param_groups:
-        param_group["lr"] = lr_scheduler(each_loop)
+        param_group["lr"] = lr_scheduler(update_step)
 
     x, y = data_obj.get_batch("train")
     logits, loss = model(x, y)
     assert loss is not None
     train_losses.append(loss.item())
-    optimizer.zero_grad()
+    loss = loss / N # for gradient accumulation
     loss.backward()
-    optimizer.step()
-    if each_loop > 0 and each_loop % conf.checkpoint_interval == 0:
-        checkpoint.save_checkpoint(model, optimizer, conf, each_loop)
-    if each_loop > 0 and each_loop % conf.eval_interval == 0:
-        model.eval()
-        train_loss = np.mean(train_losses[-conf.eval_interval :])
-        lr = optimizer.param_groups[0]["lr"]
-        print(f"Train loss at step {each_loop} and lr {lr}: {train_loss}")
-        eval_losses = []
-        with torch.no_grad():
-            for _ in range(conf.eval_steps):
-                x, y = data_obj.get_batch("val")
-                logits, loss = model(x, y)
-                eval_losses.append(loss.item())
 
-        eval_loss = np.mean(eval_losses)
-        print(f"Eval loss at {each_loop}: {eval_loss}")
+    if (each_loop + 1) % N == 0:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), conf.grad_clip)
+        optimizer.step()
+        optimizer.zero_grad()
+        update_step += 1
 
-        model.train()
-    last_step = each_loop
+        if update_step > 0 and update_step % conf.checkpoint_interval == 0:
+            checkpoint.save_checkpoint(model, optimizer, conf, update_step)
+        if update_step > 0 and update_step % conf.eval_interval == 0:
+            model.eval()
+            train_loss = np.mean(train_losses[-conf.eval_interval * N:])
+            lr = optimizer.param_groups[0]["lr"]
+            print(f"Train loss at update step {update_step} and lr {lr}: {train_loss}")
+            eval_losses = []
+            with torch.no_grad():
+                for _ in range(conf.eval_steps):
+                    x, y = data_obj.get_batch("val")
+                    logits, loss = model(x, y)
+                    eval_losses.append(loss.item())
+
+            eval_loss = np.mean(eval_losses)
+            print(f"Eval loss at update step {update_step}: {eval_loss}")
+
+            model.train()
+        last_step = update_step
 
 model.eval()
 # Loss Evaluation

@@ -15,14 +15,23 @@ from model import GPT
 enc = tiktoken.get_encoding("gpt2")
 
 vocab_size = enc.n_vocab
-batch_size = 4
-max_steps = 1000
-block_size = 64
-n_embd = 384
-# max_new_tokens = 256
-# temperature = 0.8
-# top_k = 50
+block_size = 256
+batch_size = 8
+gradient_accumulation_steps = 4
+n_embd = 256
+n_head = 4
+n_layer = 6
 dropout = 0.1
+lr = 3e-4
+min_lr = 3e-5
+warmup_iters = 200
+decay_iters = 10000
+max_steps = 10000
+eval_interval = 250
+eval_steps = 20
+checkpoint_interval = 500
+grad_clip = 1.0
+weight_decay = 0.1
 device = (
     "cuda"
     if torch.cuda.is_available()

@@ -24,7 +24,7 @@ class Config:
         gradient_accumulation_steps = 1,
         train_split=0.9,
         checkpoint_interval=500,
-        weight_decay=0,
+        weight_decay=0.0,
         seed=123,
         resume=False
     ):

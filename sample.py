@@ -2,11 +2,12 @@ from checkpoint import  load_checkpoint_file
 from config import Config
 import torch
 import tiktoken
+from pathlib import Path
 
 from model import GPT
 
 
-def sample(prompt: str):
+def sample(prompt: str, checkpoint_file: Path):
     enc = tiktoken.get_encoding("gpt2")
     encoded = enc.encode(prompt)
 
@@ -17,7 +18,7 @@ def sample(prompt: str):
     prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
     prompt_tensor = prompt_tensor.to(device)
 
-    checkpoint = load_checkpoint_file(device)
+    checkpoint = load_checkpoint_file(device, checkpoint_file)
 
     config_dict = dict(checkpoint["config"])
     config_dict["device"] = device
@@ -40,7 +41,9 @@ def sample(prompt: str):
     print(f"Generated str: {generated_str}")
 
     
+def sample_with_prompt(checkpoint_path: Path):
+    prompt = input("Enter the prompt: ")
+    sample(prompt, checkpoint_path)
 
 if __name__ == "__main__": 
-    prompt = input("Enter the prompt: ")
-    sample(prompt)
+    sample_with_prompt(Path("checkpoint.pt"))

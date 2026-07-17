@@ -29,6 +29,10 @@ def train(
     resume_mode: str = "none",
     checkpoint_path: Path = Path("checkpoint.pt"),
 ) -> None:
+    torch.manual_seed(conf.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(conf.seed)
+
     print(f"Using device: {conf.device}")
 
     # Data

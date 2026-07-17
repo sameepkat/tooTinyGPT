@@ -7,8 +7,8 @@ from pathlib import Path
 from model import GPT
 
 
-def sample(prompt: str, checkpoint_file: Path):
-    enc = tiktoken.get_encoding("gpt2")
+def sample(prompt: str, checkpoint_file: Path, encoding: str):
+    enc = tiktoken.get_encoding(encoding)
     encoded = enc.encode(prompt)
 
     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -41,9 +41,9 @@ def sample(prompt: str, checkpoint_file: Path):
     print(f"Generated str: {generated_str}")
 
     
-def sample_with_prompt(checkpoint_path: Path):
+def sample_with_prompt(checkpoint_path: Path, encoding: str):
     prompt = input("Enter the prompt: ")
-    sample(prompt, checkpoint_path)
+    sample(prompt, checkpoint_path, encoding)
 
 if __name__ == "__main__": 
-    sample_with_prompt(Path("checkpoint.pt"))
+    sample_with_prompt(Path("checkpoint.pt"), "gpt2")

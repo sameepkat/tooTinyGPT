@@ -70,6 +70,9 @@ def train(
     print(f"Initial loss: {loss}")
     print(f"Total parameters: {total_params:,}")
 
+    best_eval_loss = float("inf")
+    best_checkpoint_path = checkpoint_path.with_name(f"{checkpoint_path.stem}_best{checkpoint_path.suffix}")
+
     last_step = start_step
     # Training loop
     optimizer.zero_grad()
@@ -114,6 +117,11 @@ def train(
                 eval_loss = np.mean(eval_losses)
                 print(f"Eval loss at update step {update_step}: {eval_loss}")
 
+                if eval_loss < best_eval_loss:
+                    best_eval_loss = eval_loss
+                    checkpoint.save_checkpoint(model, optimizer, conf, update_step, best_checkpoint_path)
+                    print(f"Saved best checkpoint to {best_checkpoint_path} with eval loss {best_eval_loss}")
+
                 model.train()
             last_step = update_step
 
@@ -134,4 +142,8 @@ def train(
         checkpoint.save_checkpoint(model, optimizer, conf, last_step, checkpoint_path)
 
     estimated_loss = np.mean(eval_losses)
+
+    if estimated_loss < best_eval_loss:
+        checkpoint.save_checkpoint(model, optimizer, conf, last_step, best_checkpoint_path)
+        print(f"Saved best checkpoint to {best_checkpoint_path} with eval loss {best_eval_loss}")
     print(f"Estimated loss: {estimated_loss}")

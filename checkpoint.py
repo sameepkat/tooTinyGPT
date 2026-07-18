@@ -17,7 +17,7 @@ def load_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, co
     # checkpoint_path = os.path.join(os.path.dirname(__file__), checkpoint_path)
     if not os.path.exists(checkpoint_path):
         raise ValueError("checkpoint file not found")
-    checkpoint = torch.load(checkpoint_path, map_location=config.device)
+    checkpoint = torch.load(checkpoint_path, map_location=config.device, weights_only=False)
     # config = checkpoint['config']
     model_state = checkpoint['model_state_dict']
     optimizer_state = checkpoint['optimizer_state_dict']
@@ -32,7 +32,7 @@ def load_model_checkpoint(model, config: Config, checkpoint_path: Path):
     if not os.path.exists(checkpoint_path):
         raise ValueError("checkpoint file not found")
 
-    checkpoint = torch.load(checkpoint_path, map_location=config.device)
+    checkpoint = torch.load(checkpoint_path, map_location=config.device, weights_only=False)
 
     model_state = checkpoint['model_state_dict']
     model.load_state_dict(model_state)
@@ -45,6 +45,6 @@ def load_checkpoint_file(device: str | torch.device, checkpoint_path: Path):
     if not os.path.exists(checkpoint_path):
         raise ValueError("checkpoint file not found")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     return checkpoint

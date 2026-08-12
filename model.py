@@ -65,7 +65,7 @@ class GPT(nn.Module):
 
         B, T, vocab_size = logits.shape
 
-        loss_fn = nn.CrossEntropyLoss()
+        loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
         N = B * T
 
         if y is None:
@@ -84,7 +84,7 @@ class GPT(nn.Module):
         """
         i = max_new_tokens
 
-        if temperature <= 0:
+        if temperature < 0:
             raise ValueError(f"Invalid temperature: {temperature}")
         while i > 0:
             B, T = token_ids.shape
@@ -94,19 +94,22 @@ class GPT(nn.Module):
 
             logits, _ = self.forward(ctx)
             latest = logits[:, -1, :]  # (B, vocab_size)
-            latest = latest / temperature
-            if top_k is not None and top_k <= 0:
-                raise ValueError(f"top_k can't be 0 or negative: {top_k}")
-            if top_k is not None:
-                top_k = min(top_k, latest.shape[-1])  # clamping
-                values, indices = torch.topk(latest, k=top_k, dim=-1)
-                threshold = values[:, [-1]]
-                latest = torch.masked_fill(latest, latest < threshold, float("-inf"))
+            if temperature == 0:
+                prediction = torch.argmax(latest, dim=-1, keepdim=True)
+            else:
+                latest = latest / temperature
+                if top_k is not None and top_k <= 0:
+                    raise ValueError(f"top_k can't be 0 or negative: {top_k}")
+                if top_k is not None:
+                    top_k = min(top_k, latest.shape[-1])  # clamping
+                    values, indices = torch.topk(latest, k=top_k, dim=-1)
+                    threshold = values[:, [-1]]
+                    latest = torch.masked_fill(latest, latest < threshold, float("-inf"))
 
-            probabilities = nn.functional.softmax(
-                latest, -1
-            )  # softmax over vocab dimension to get probabilities over vocabulary
-            prediction = torch.multinomial(probabilities, num_samples=1)
+                probabilities = nn.functional.softmax(
+                    latest, -1
+                )  # softmax over vocab dimension to get probabilities over vocabulary
+                prediction = torch.multinomial(probabilities, num_samples=1)
 
             if stop_token_id is not None and prediction.item() == stop_token_id:
                 break

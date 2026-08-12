@@ -18,6 +18,8 @@ class InferenceEngine:
         self.eos_token_id = self.tokenizer.token_to_id("<EOS>")
         if self.eos_token_id is None:
             raise ValueError("tokenizer does not define <EOS>")
+        self.user_token_id = self._required_token_id("<USER>")
+        self.assistant_token_id = self._required_token_id("<ASSISTANT>")
         checkpoint_data = load_checkpoint_file(self.device, checkpoint_path)
         self.config = Config.from_dict(checkpoint_data["config"], device=self.device)
         tokenizer_vocab_size = self.tokenizer.get_vocab_size()
@@ -29,6 +31,12 @@ class InferenceEngine:
         self.model = GPT(self.config).to(self.device)
         self.model.load_state_dict(checkpoint_data["model_state_dict"])
         self.model.eval()
+
+    def _required_token_id(self, token: str) -> int:
+        token_id = self.tokenizer.token_to_id(token)
+        if token_id is None:
+            raise ValueError(f"tokenizer does not define {token}")
+        return token_id
 
     def generate(
         self,
@@ -53,6 +61,31 @@ class InferenceEngine:
             )[0]
         return self.tokenizer.decode(token_ids[prompt_length:].tolist(), skip_special_tokens=False)
 
+    def generate_instruction(
+        self,
+        instruction: str,
+        *,
+        max_new_tokens: int = 256,
+        temperature: float = 0.2,
+        top_k: int | None = 20,
+    ) -> str:
+        instruction_ids = self.tokenizer.encode(instruction, add_special_tokens=False).ids
+        max_instruction_tokens = max(0, self.config.block_size - 2)
+        if len(instruction_ids) > max_instruction_tokens:
+            instruction_ids = instruction_ids[:max_instruction_tokens]
+        prompt_ids = [self.user_token_id] + instruction_ids + [self.assistant_token_id]
+        prompt_length = len(prompt_ids)
+        prompt_tensor = torch.tensor(prompt_ids, dtype=torch.long, device=self.device).unsqueeze(0)
+        with torch.no_grad():
+            token_ids = self.model.generate(
+                prompt_tensor,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=top_k,
+                stop_token_id=self.eos_token_id,
+            )[0]
+        return self.tokenizer.decode(token_ids[prompt_length:].tolist(), skip_special_tokens=True)
+
 
 @lru_cache(maxsize=4)
 def get_inference_engine(checkpoint_path: str, tokenizer_path: str, device: str = "cpu") -> InferenceEngine:
@@ -71,6 +104,24 @@ def infer(
     top_k: int | None = None,
 ) -> str:
     return get_inference_engine(str(checkpoint_file), str(tokenizer_file), str(device)).generate(
+        prompt,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+    )
+
+
+def infer_instruction(
+    prompt: str,
+    checkpoint_file: Path,
+    tokenizer_file: Path,
+    device: str | torch.device = "cpu",
+    *,
+    max_new_tokens: int = 256,
+    temperature: float = 0.2,
+    top_k: int | None = 20,
+) -> str:
+    return get_inference_engine(str(checkpoint_file), str(tokenizer_file), str(device)).generate_instruction(
         prompt,
         max_new_tokens=max_new_tokens,
         temperature=temperature,

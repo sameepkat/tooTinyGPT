@@ -12,6 +12,7 @@ from config import Config
 class ResumeState:
     step: int
     best_val_loss: float
+    extra_state: dict
 
 
 def save_checkpoint(
@@ -23,6 +24,7 @@ def save_checkpoint(
     *,
     scaler: torch.amp.GradScaler | None = None,
     best_val_loss: float = float("inf"),
+    extra_state: dict | None = None,
 ) -> None:
     checkpoint_path = Path(checkpoint_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,6 +35,8 @@ def save_checkpoint(
         "step": step,
         "best_val_loss": best_val_loss,
     }
+    if extra_state is not None:
+        payload["extra_state"] = extra_state
     if scaler is not None:
         payload["scaler_state_dict"] = scaler.state_dict()
     torch.save(payload, checkpoint_path)
@@ -55,6 +59,7 @@ def load_checkpoint(
     return ResumeState(
         step=int(checkpoint_data.get("step", 0)),
         best_val_loss=float(checkpoint_data.get("best_val_loss", float("inf"))),
+        extra_state=dict(checkpoint_data.get("extra_state", {})),
     )
 
 

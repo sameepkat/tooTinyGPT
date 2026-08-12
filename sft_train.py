@@ -7,12 +7,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from tokenizers import Tokenizer
 
 import checkpoint
 from config import Config
 from model import GPT
 from sft_data import SFTDataset, collate_sft_batch, print_sft_stats
+
+
+EARLY_RESPONSE_TOKENS = 32
+MID_RESPONSE_TOKENS = 64
+EARLY_RESPONSE_WEIGHT = 4.0
+MID_RESPONSE_WEIGHT = 2.0
+LATE_RESPONSE_WEIGHT = 1.0
 
 
 @dataclass(frozen=True)
@@ -57,31 +65,72 @@ def _batch_indices(dataset_size: int, batch_size: int, epoch: int, seed: int, sh
     return [indices[start : start + batch_size] for start in range(0, dataset_size, batch_size)]
 
 
+def _weighted_response_loss(logits: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+    _, _, vocab_size = logits.shape
+    token_loss = F.cross_entropy(
+        logits.reshape(-1, vocab_size),
+        y.reshape(-1),
+        ignore_index=-100,
+        reduction="none",
+    ).reshape_as(y)
+
+    supervised_mask = y != -100
+    response_position = supervised_mask.long().cumsum(dim=1)
+    weights = torch.zeros_like(token_loss)
+    weights = torch.where(
+        supervised_mask & (response_position <= EARLY_RESPONSE_TOKENS),
+        torch.full_like(weights, EARLY_RESPONSE_WEIGHT),
+        weights,
+    )
+    weights = torch.where(
+        supervised_mask
+        & (response_position > EARLY_RESPONSE_TOKENS)
+        & (response_position <= MID_RESPONSE_TOKENS),
+        torch.full_like(weights, MID_RESPONSE_WEIGHT),
+        weights,
+    )
+    weights = torch.where(
+        supervised_mask & (response_position > MID_RESPONSE_TOKENS),
+        torch.full_like(weights, LATE_RESPONSE_WEIGHT),
+        weights,
+    )
+
+    weight_sum = weights.sum(dim=1)
+    valid_examples = weight_sum > 0
+    if not valid_examples.any():
+        raise ValueError("SFT batch produced no supervised response tokens")
+    per_example_loss = (token_loss * weights).sum(dim=1) / weight_sum.clamp_min(1.0)
+    loss = per_example_loss[valid_examples].mean()
+    supervised_tokens = int(supervised_mask.sum().item())
+    return loss, int(valid_examples.sum().item()), supervised_tokens
+
+
+def _weighted_sft_loss(model: GPT, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, int, int]:
+    logits, _ = model(x)
+    return _weighted_response_loss(logits, y)
+
+
 def _evaluate_sft(model: GPT, dataset: SFTDataset, conf: Config, amp_enabled: bool) -> float:
     was_training = model.training
     model.eval()
     total_loss = 0.0
-    total_supervised_tokens = 0
+    total_examples = 0
     batches = _batch_indices(len(dataset), conf.batch_size, epoch=0, seed=conf.seed, shuffle=False)
     with torch.no_grad():
         for batch in batches:
             examples = [dataset[index] for index in batch]
             x, y = collate_sft_batch(examples, dataset.special_tokens.pad_id, conf.device)
-            supervised_tokens = int((y != -100).sum().item())
-            if supervised_tokens == 0:
-                continue
             with _autocast_context(amp_enabled):
-                _, loss = model(x, y)
-            assert loss is not None
+                loss, valid_examples, _ = _weighted_sft_loss(model, x, y)
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"non-finite SFT validation loss: {loss.item()}")
-            total_loss += loss.item() * supervised_tokens
-            total_supervised_tokens += supervised_tokens
+            total_loss += loss.item() * valid_examples
+            total_examples += valid_examples
     if was_training:
         model.train()
-    if total_supervised_tokens == 0:
+    if total_examples == 0:
         raise ValueError("SFT validation set produced no supervised response tokens")
-    return total_loss / total_supervised_tokens
+    return total_loss / total_examples
 
 
 def train_sft(
@@ -166,26 +215,29 @@ def train_sft(
             optimizer.zero_grad(set_to_none=True)
             batch_tensors: list[tuple[torch.Tensor, torch.Tensor, int]] = []
             supervised_tokens = 0
+            total_examples = 0
 
             for batch in group:
                 examples = [train_dataset[index] for index in batch]
                 x, y = collate_sft_batch(examples, train_dataset.special_tokens.pad_id, conf.device)
-                batch_supervised_tokens = int((y != -100).sum().item())
-                supervised_tokens += batch_supervised_tokens
-                batch_tensors.append((x, y, batch_supervised_tokens))
+                supervised_tokens += int((y != -100).sum().item())
+                valid_examples = int((y != -100).any(dim=1).sum().item())
+                total_examples += valid_examples
+                batch_tensors.append((x, y, valid_examples))
 
             if supervised_tokens == 0:
                 raise ValueError("SFT training batch produced no supervised response tokens")
+            if total_examples == 0:
+                raise ValueError("SFT training batch produced no valid supervised examples")
 
             weighted_loss_sum = 0.0
-            for x, y, batch_supervised_tokens in batch_tensors:
+            for x, y, valid_examples in batch_tensors:
                 with _autocast_context(amp_enabled):
-                    _, loss = model(x, y)
-                    assert loss is not None
-                    backward_loss = loss * (batch_supervised_tokens / supervised_tokens)
+                    loss, valid_examples, _ = _weighted_sft_loss(model, x, y)
+                    backward_loss = loss * (valid_examples / total_examples)
                 if not torch.isfinite(loss):
                     raise FloatingPointError(f"non-finite SFT training loss at update {completed_updates + 1}: {loss.item()}")
-                weighted_loss_sum += loss.item() * batch_supervised_tokens
+                weighted_loss_sum += loss.item() * valid_examples
                 if scaler is not None:
                     scaler.scale(backward_loss).backward()
                 else:
@@ -203,13 +255,13 @@ def train_sft(
 
             completed_updates += 1
             batch_cursor += len(group)
-            train_loss = weighted_loss_sum / supervised_tokens
+            train_loss = weighted_loss_sum / total_examples
 
             if completed_updates % options.log_interval == 0 or completed_updates == 1:
                 elapsed = time.perf_counter() - started_at
                 print(
                     f"epoch {epoch + 1}/{options.epochs} | update {completed_updates}/{total_updates} | "
-                    f"response loss {train_loss:.4f} | lr {lr:.6g} | supervised tokens {supervised_tokens:,} | "
+                    f"weighted response loss {train_loss:.4f} | lr {lr:.6g} | supervised tokens {supervised_tokens:,} | "
                     f"elapsed {elapsed:.1f}s | grad norm {float(grad_norm):.3f}"
                 )
 
@@ -228,7 +280,7 @@ def train_sft(
 
         start_batch_index = 0
         eval_loss = _evaluate_sft(model, val_dataset, conf, amp_enabled)
-        print(f"epoch {epoch + 1}/{options.epochs} validation response loss {eval_loss:.4f} | best {best_eval_loss:.4f}")
+        print(f"epoch {epoch + 1}/{options.epochs} validation weighted response loss {eval_loss:.4f} | best {best_eval_loss:.4f}")
         if eval_loss < best_eval_loss:
             best_eval_loss = eval_loss
             checkpoint.save_checkpoint(
@@ -254,4 +306,4 @@ def train_sft(
         )
         print(f"Saved SFT checkpoint: {checkpoint_path}")
 
-    print(f"Finished SFT at update {completed_updates}; best validation response loss {best_eval_loss:.4f}")
+    print(f"Finished SFT at update {completed_updates}; best validation weighted response loss {best_eval_loss:.4f}")

@@ -5,7 +5,7 @@ class Config:
     def __init__(
         self,
         vocab_size,
-        block_size=128,  # T - How many tokens per chunk
+        block_size=128,  # T - How many tokens per chunk (sequence length)
         n_embd=128,  # C - Vector size after embedding
         n_head=4,
         n_layer=4,

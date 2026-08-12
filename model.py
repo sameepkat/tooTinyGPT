@@ -68,7 +68,7 @@ class GPT(nn.Module):
         return logits, loss
 
     def generate(
-        self, token_ids: torch.Tensor, max_new_tokens: int, temperature=0.8, top_k=None
+            self, token_ids: torch.Tensor, max_new_tokens: int, temperature=0.8, top_k=None, stop_token_id=None,
     ):  # - token IDs generated so far - shape = (B, T)
         """
         Used for generation/ sampling
@@ -98,6 +98,9 @@ class GPT(nn.Module):
                 latest, -1
             )  # softmax over vocab dimension to get probabilities over vocabulary
             prediction = torch.multinomial(probabilities, num_samples=1)
+
+            if stop_token_id is not None and prediction.item() == stop_token_id:
+                break
 
             token_ids = torch.cat(
                 [token_ids, prediction], dim=1

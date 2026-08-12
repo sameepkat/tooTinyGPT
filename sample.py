@@ -1,23 +1,29 @@
-import inference
 from pathlib import Path
 
-def sample_with_prompt(checkpoint_file: Path = Path("checkpoint.pt"), encoding: str = "gpt2"):
-    lines = []
+from inference import infer
 
-    print("Enter prompt. Type END when finished: ")
 
-    while True:
-        line = input()
-
-        if line == "END":
-            break
-        lines.append(line)
-
-    text = "\n".join(lines)
-    generated_text = inference.infer(text, checkpoint_file, encoding)
-
-    print(generated_text)
-
-if __name__ == "__main__":
-    sample_with_prompt(Path("checkpoint.pt"))
-
+def sample_with_prompt(
+    checkpoint_file: Path,
+    tokenizer_file: Path,
+    prompt: str,
+    *,
+    device: str = "cpu",
+    max_new_tokens: int = 256,
+    temperature: float = 0.8,
+    top_k: int | None = None,
+) -> str:
+    continuation = infer(
+        prompt,
+        checkpoint_file,
+        tokenizer_file,
+        device,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+    )
+    print("INPUT PROMPT")
+    print(prompt)
+    print("GENERATED CONTINUATION")
+    print(continuation)
+    return continuation

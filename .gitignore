@@ -1,4 +1,9 @@
-__pycache__
-.venv
-data
+__pycache__/
+.venv/
+data/lum/stage_a_*/train.bin
+data/lum/stage_a_*/val.bin
+checkpoints/
+*.pt
+*.pth
 checkpoint.pt
+data/

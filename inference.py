@@ -1,51 +1,78 @@
-from checkpoint import  load_checkpoint_file
-from config import Config
-import torch
-import tiktoken
+from __future__ import annotations
+
+from functools import lru_cache
 from pathlib import Path
 
+import torch
+from tokenizers import Tokenizer
+
+from checkpoint import load_checkpoint_file
+from config import Config
 from model import GPT
 
 
-def infer(prompt: str, checkpoint_file: Path, encoding: str) -> str:
-    enc = tiktoken.get_encoding(encoding)
-    encoded = enc.encode(prompt)
+class InferenceEngine:
+    def __init__(self, checkpoint_path: Path, tokenizer_path: Path, device: str | torch.device = "cpu"):
+        self.device = torch.device(device)
+        self.tokenizer = Tokenizer.from_file(str(tokenizer_path))
+        self.eos_token_id = self.tokenizer.token_to_id("<EOS>")
+        if self.eos_token_id is None:
+            raise ValueError("tokenizer does not define <EOS>")
+        checkpoint_data = load_checkpoint_file(self.device, checkpoint_path)
+        self.config = Config.from_dict(checkpoint_data["config"], device=self.device)
+        tokenizer_vocab_size = self.tokenizer.get_vocab_size()
+        if self.config.vocab_size != tokenizer_vocab_size:
+            raise ValueError(
+                f"checkpoint vocab_size ({self.config.vocab_size}) does not match "
+                f"tokenizer vocab size ({tokenizer_vocab_size})"
+            )
+        self.model = GPT(self.config).to(self.device)
+        self.model.load_state_dict(checkpoint_data["model_state_dict"])
+        self.model.eval()
 
-    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    def generate(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int = 256,
+        temperature: float = 0.8,
+        top_k: int | None = None,
+    ) -> str:
+        encoded = self.tokenizer.encode(prompt, add_special_tokens=False).ids
+        if not encoded:
+            raise ValueError("prompt must encode to at least one token")
+        prompt_length = len(encoded)
+        prompt_tensor = torch.tensor(encoded, dtype=torch.long, device=self.device).unsqueeze(0)
+        with torch.no_grad():
+            token_ids = self.model.generate(
+                prompt_tensor,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=top_k,
+                stop_token_id=self.eos_token_id,
+            )[0]
+        return self.tokenizer.decode(token_ids[prompt_length:].tolist(), skip_special_tokens=False)
 
 
-    prompt_tensor = torch.tensor(encoded, dtype=torch.long)
-    prompt_tensor = prompt_tensor.view(1, -1) # add a batch dimension -> (1, T)
-    prompt_tensor = prompt_tensor.to(device)
+@lru_cache(maxsize=4)
+def get_inference_engine(checkpoint_path: str, tokenizer_path: str, device: str = "cpu") -> InferenceEngine:
+    """Cache heavyweight model/tokenizer loading for repeated API requests."""
+    return InferenceEngine(Path(checkpoint_path), Path(tokenizer_path), device)
 
-    checkpoint = load_checkpoint_file(device, checkpoint_file)
 
-    config_dict = dict(checkpoint["config"])
-    config_dict["device"] = device
-    config = Config(**config_dict)
-
-    max_new_tokens = 256 # static or dynamic
-    # TODO: Pass flag for max new token
-
-    model = GPT(config).to(config.device)
-    model_state = checkpoint['model_state_dict']
-    model.load_state_dict(model_state)
-
-    model.eval()
-
-    with torch.no_grad():
-        token_ids = model.generate(prompt_tensor, max_new_tokens, stop_token_id=enc.eot_token,)[0]
-
-    generated_str = enc.decode(token_ids.cpu().tolist())
-    # print(f"Prompt str: {prompt}")
-    # print(f"Generated str: {generated_str}")
-
-    return generated_str
-
-    
-# def sample_with_prompt(checkpoint_path: Path, encoding: str):
-#     prompt = input("Enter the prompt: ")
-#     sample(prompt, checkpoint_path, encoding)
-
-# if __name__ == "__main__": 
-#     sample_with_prompt(Path("checkpoint.pt"), "gpt2")
+def infer(
+    prompt: str,
+    checkpoint_file: Path,
+    tokenizer_file: Path,
+    device: str | torch.device = "cpu",
+    *,
+    max_new_tokens: int = 256,
+    temperature: float = 0.8,
+    top_k: int | None = None,
+) -> str:
+    return get_inference_engine(str(checkpoint_file), str(tokenizer_file), str(device)).generate(
+        prompt,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+    )

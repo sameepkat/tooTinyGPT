@@ -1,50 +1,72 @@
-import os
-import torch
-from config import Config
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
 
-def save_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, config: Config, step: int, checkpoint_path: Path):
-    to_save = {
+import torch
+
+from config import Config
+
+
+@dataclass(frozen=True)
+class ResumeState:
+    step: int
+    best_val_loss: float
+
+
+def save_checkpoint(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    config: Config,
+    step: int,
+    checkpoint_path: Path,
+    *,
+    scaler: torch.amp.GradScaler | None = None,
+    best_val_loss: float = float("inf"),
+) -> None:
+    checkpoint_path = Path(checkpoint_path)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
-        "config": config.__dict__,
-        "step": step
+        "config": config.to_dict(),
+        "step": step,
+        "best_val_loss": best_val_loss,
     }
-    #checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoint.pt")
-    torch.save(to_save, checkpoint_path)
+    if scaler is not None:
+        payload["scaler_state_dict"] = scaler.state_dict()
+    torch.save(payload, checkpoint_path)
 
-def load_checkpoint(model: torch.nn.Module, optimizer: torch.optim.Optimizer, config: Config, checkpoint_path: Path):
-    # checkpoint_path = os.path.join(os.path.dirname(__file__), checkpoint_path)
-    if not os.path.exists(checkpoint_path):
-        raise ValueError("checkpoint file not found")
-    checkpoint = torch.load(checkpoint_path, map_location=config.device, weights_only=False)
-    # config = checkpoint['config']
-    model_state = checkpoint['model_state_dict']
-    optimizer_state = checkpoint['optimizer_state_dict']
-    model.load_state_dict(model_state)
-    optimizer.load_state_dict(optimizer_state)
+
+def load_checkpoint(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    config: Config,
+    checkpoint_path: Path,
+    *,
+    scaler: torch.amp.GradScaler | None = None,
+) -> ResumeState:
+    checkpoint_data = load_checkpoint_file(config.device, checkpoint_path)
+    model.load_state_dict(checkpoint_data["model_state_dict"])
+    optimizer.load_state_dict(checkpoint_data["optimizer_state_dict"])
+    if scaler is not None and "scaler_state_dict" in checkpoint_data:
+        scaler.load_state_dict(checkpoint_data["scaler_state_dict"])
     model.to(config.device)
-    return checkpoint["step"] + 1
+    return ResumeState(
+        step=int(checkpoint_data.get("step", 0)),
+        best_val_loss=float(checkpoint_data.get("best_val_loss", float("inf"))),
+    )
 
-def load_model_checkpoint(model, config: Config, checkpoint_path: Path):
-    # checkpoint_path = os.path.join(os.path.dirname(__file__), checkpoint_path)
 
-    if not os.path.exists(checkpoint_path):
-        raise ValueError("checkpoint file not found")
-
-    checkpoint = torch.load(checkpoint_path, map_location=config.device, weights_only=False)
-
-    model_state = checkpoint['model_state_dict']
-    model.load_state_dict(model_state)
+def load_model_checkpoint(model: torch.nn.Module, config: Config, checkpoint_path: Path) -> dict:
+    checkpoint_data = load_checkpoint_file(config.device, checkpoint_path)
+    model.load_state_dict(checkpoint_data["model_state_dict"])
     model.to(config.device)
-    return checkpoint
+    return checkpoint_data
 
-def load_checkpoint_file(device: str | torch.device, checkpoint_path: Path):
-    #checkpoint_path = os.path.join(os.path.dirname(__file__), checkpoint_path)
 
-    if not os.path.exists(checkpoint_path):
-        raise ValueError("checkpoint file not found")
-
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-    return checkpoint
+def load_checkpoint_file(device: str | torch.device, checkpoint_path: Path) -> dict:
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.is_file():
+        raise ValueError(f"checkpoint file not found: {checkpoint_path}")
+    return torch.load(checkpoint_path, map_location=device, weights_only=False)

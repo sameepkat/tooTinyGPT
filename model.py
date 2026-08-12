@@ -23,9 +23,18 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(in_features=n_embd, out_features=vocab_size)
         self.blocks = nn.ModuleList(Block(config) for _ in range(n_layer))
         self.layer_norm = nn.LayerNorm(n_embd, bias=False)
+        self.apply(self._init_weights)
         self.lm_head.weight = (
             self.token_embedding_table.weight
         )  # Weight Tying. reduces parameter count
+
+    def _init_weights(self, module: nn.Module) -> None:
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(
         self, x: torch.Tensor, y: Optional[torch.Tensor] = None
